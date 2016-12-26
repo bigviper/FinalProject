@@ -89,7 +89,7 @@ public class ConnectionActivity extends AppCompatActivity {
         navigationButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Intent intent = new Intent(ConnectionActivity.this,CameraActivity.class);
+                Intent intent = new Intent(ConnectionActivity.this,RecordActivity.class);
                 intent.putExtra("connectedBluetoothDevice",mBluetoothDevice);
                 startActivity(intent);
 
