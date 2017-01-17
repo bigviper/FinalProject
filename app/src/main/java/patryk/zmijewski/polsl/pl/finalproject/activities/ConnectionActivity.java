@@ -1,4 +1,4 @@
-package patryk.zmijewski.polsl.pl.finalproject;
+package patryk.zmijewski.polsl.pl.finalproject.activities;
 
 
 import com.neurosky.connection.*;
@@ -11,13 +11,11 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.AdapterView.*;
 import android.widget.Button;
@@ -26,6 +24,11 @@ import android.widget.Toast;
 
 import java.lang.reflect.Method;
 import java.util.Set;
+
+import patryk.zmijewski.polsl.pl.finalproject.BTDeviceListAdapter;
+import patryk.zmijewski.polsl.pl.finalproject.R;
+import patryk.zmijewski.polsl.pl.finalproject.RecordActivity;
+import patryk.zmijewski.polsl.pl.finalproject.Utils;
 
 public class ConnectionActivity extends AppCompatActivity {
 

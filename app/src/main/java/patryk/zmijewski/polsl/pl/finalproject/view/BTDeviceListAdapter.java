@@ -1,4 +1,4 @@
-package patryk.zmijewski.polsl.pl.finalproject;
+package patryk.zmijewski.polsl.pl.finalproject.view;
 
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
@@ -10,8 +10,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import java.util.ArrayList;
 
-
-
+import patryk.zmijewski.polsl.pl.finalproject.R;
 
 
 public class BTDeviceListAdapter extends BaseAdapter {

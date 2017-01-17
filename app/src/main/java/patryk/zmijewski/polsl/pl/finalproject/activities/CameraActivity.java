@@ -1,4 +1,4 @@
-package patryk.zmijewski.polsl.pl.finalproject;
+package patryk.zmijewski.polsl.pl.finalproject.activities;
 
 import android.app.Activity;
 import android.content.Context;
@@ -24,6 +24,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+
+import patryk.zmijewski.polsl.pl.finalproject.CameraPreview;
+import patryk.zmijewski.polsl.pl.finalproject.R;
 
 public class CameraActivity extends Activity{
 

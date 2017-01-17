@@ -1,4 +1,4 @@
-package patryk.zmijewski.polsl.pl.finalproject;
+package patryk.zmijewski.polsl.pl.finalproject.activities;
 
 import android.app.Activity;
 import android.content.Context;
@@ -45,6 +45,8 @@ import java.util.List;
 import org.bytedeco.javacpp.avutil;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
+
+import patryk.zmijewski.polsl.pl.finalproject.R;
 
 public class RecordActivity extends Activity implements OnClickListener {
 

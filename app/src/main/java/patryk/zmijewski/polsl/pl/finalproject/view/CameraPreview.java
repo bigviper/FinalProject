@@ -1,4 +1,4 @@
-package patryk.zmijewski.polsl.pl.finalproject;
+package patryk.zmijewski.polsl.pl.finalproject.view;
 
 import android.content.Context;
 import android.hardware.Camera;
