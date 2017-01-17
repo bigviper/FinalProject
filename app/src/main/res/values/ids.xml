@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <item name="delta_score" type="id"/>
+    <item name="theta_score" type="id"/>
+    <item name="low_alpha_score" type="id"/>
+    <item name="high_alpha_score" type="id"/>
+    <item name="low_beta_score" type="id"/>
+    <item name="high_beta_score" type="id"/>
+    <item name="low_gamma_score" type="id"/>
+    <item name="medium_gamma_score" type="id"/>
+    <item name="attention_score" type="id"/>
+    <item name="meditation_score" type="id"/>
+</resources>

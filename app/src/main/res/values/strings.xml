@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">Final Project</string>
+    <string name="settings_string">Settings:</string>
+    <string name="file_name">File name:</string>
+    <string name="sensor_settings">Select the readings form the sensor, that will be visible on the record:</string>
+    <string name="restore_default">Restore default:</string>
+    <string name="attention_string">"Attention "</string>
+    <string name="meditation_string">"Meditation "</string>
+    <string name="save_btn">SAVE</string>
+    <string name="defaults_btn">DEFAULT SETTINGS</string>
+    <string name="insert_filename">Insert file name.</string>
 </resources>

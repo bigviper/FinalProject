@@ -1,13 +1,14 @@
 package patryk.zmijewski.polsl.pl.finalproject.activities;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
-import android.graphics.YuvImage;
 import android.graphics.drawable.Drawable;
 import android.hardware.Camera;
 import android.hardware.Camera.PreviewCallback;
@@ -15,31 +16,38 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
-import android.os.PowerManager;
+import android.os.Environment;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.RenderScript;
 import android.renderscript.ScriptIntrinsicYuvToRGB;
 import android.renderscript.Type;
 import android.util.Log;
-import android.view.Display;
 import android.view.KeyEvent;
-import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
+import android.widget.GridView;
+import android.widget.ImageView;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 
+import com.neurosky.AlgoSdk.NskAlgoSdk;
+import com.neurosky.connection.EEGPower;
+
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
+import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 
 import org.bytedeco.javacpp.avutil;
@@ -47,13 +55,16 @@ import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 
 import patryk.zmijewski.polsl.pl.finalproject.R;
+import patryk.zmijewski.polsl.pl.finalproject.model.sensor.SensorConnector;
+import patryk.zmijewski.polsl.pl.finalproject.model.settings.RecordSettings;
+import patryk.zmijewski.polsl.pl.finalproject.view.SensorPreviewAdapter;
 
 public class RecordActivity extends Activity implements OnClickListener {
 
     private final static String CLASS_LABEL = "RecordActivity";
     private final static String LOG_TAG = CLASS_LABEL;
 
-    private String ffmpeg_link = "/mnt/sdcard/stream2.mp4";
+    private String ffmpeg_link;
 
     long startTime = 0;
     boolean recording = false;
@@ -63,9 +74,12 @@ public class RecordActivity extends Activity implements OnClickListener {
     private boolean isPreviewOn = false;
 
     private int sampleAudioRateInHz = 44100;
-    private int imageWidth = 320;
-    private int imageHeight = 240;
-    private int frameRate = 20;
+    private int imageWidth = 1280;
+    private int imageHeight = 720;
+    private final int image2Height = 103;
+    private final int imageDimsMultiplied = imageWidth*imageHeight;
+    private final int image2DimsMultiplied = imageWidth*image2Height;
+    private int frameRate = 30;
 
     /* audio data getting thread */
     private AudioRecord audioRecord;
@@ -77,21 +91,14 @@ public class RecordActivity extends Activity implements OnClickListener {
     private Camera cameraDevice;
     private CameraView cameraView;
 
-    private FrameLayout sensorPreview;
-    private Bitmap      sensorPreviewBitmap;
-
+    //private RelativeLayout screen;
+    //private FrameLayout sensorPreview;
+    //private EditText    data1;
+    //private Bitmap      sensorPreviewBitmap;
+    private GridView sensorPreview;
     private Frame yuvImage = null;
 
     /* layout setting */
-    private final int bg_screen_bx = 232;
-    private final int bg_screen_by = 128;
-    private final int bg_screen_width = 700;
-    private final int bg_screen_height = 500;
-    private final int bg_width = 1123;
-    private final int bg_height = 715;
-    private final int live_width = 640;
-    private final int live_height = 480;
-    private int screenWidth, screenHeight;
     private Button btnRecorderControl;
 
     /* The number of seconds in the continuous record loop (or 0 to disable loop). */
@@ -101,20 +108,70 @@ public class RecordActivity extends Activity implements OnClickListener {
     ShortBuffer[] samples;
     int imagesIndex, samplesIndex;
 
+    private final SensorConnector sensorConnector = SensorConnector.getInstance();
+    private final RecordSettings recordSettings = RecordSettings.getInstance();
+    private final int[] visibleReadings = recordSettings.getActiveSensorReadings();
+
+    private boolean isSensorConnected = false;
+
+    private SensorPreviewAdapter EEGSensorAdapter = null;
+
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        BluetoothAdapter btAdapter = null;
+
+        sensorConnector.setContext(this);
+
+
+        Intent intent = getIntent();
+        BluetoothDevice btDevice = intent.getParcelableExtra("connectedBluetoothDevice");
+        String address = intent.getStringExtra("connectedBluetoothDeviceAddress");
+
+        try {
+            btAdapter = BluetoothAdapter.getDefaultAdapter();
+            if (btAdapter == null || !btAdapter.isEnabled()) {
+                Toast.makeText(
+                        this,
+                        "Please enable your Bluetooth and re-run this program !",
+                        Toast.LENGTH_LONG).show();
+                finish();
+//				return;
+            }
+        } catch (Exception e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            Log.i(LOG_TAG, "error:" + e.getMessage());
+            return;
+        }
+
+
 
         setContentView(R.layout.activity_camera);
+       sensorConnector.setmBluetoothAdapter(btAdapter);
+        if(btDevice!=null){
+            sensorConnector.setmBluetoothDevice(btDevice);
+            sensorConnector.setAddress(address);
+            sensorConnector.start();
+            isSensorConnected = true;
+        }
+
 
         initLayout();
+
+       /* if(!sensorConnector.isConnected()) {
+            sensorConnector.start();
+        }
+        isSensorConnected = true;*/
+
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
+        sensorConnector.stop();
         recording = false;
 
         if (cameraView != null) {
@@ -132,6 +189,17 @@ public class RecordActivity extends Activity implements OnClickListener {
     private void initLayout() {
         RelativeLayout topLayout = (RelativeLayout) findViewById(R.id.camera_preview);
         cameraDevice = Camera.open();
+        /////////////Comment
+        Camera.Parameters parameters = cameraDevice.getParameters();
+
+        /*List<int[]> frameRates = parameters.getSupportedPreviewFpsRange();
+        List<Camera.Size> sizes =  parameters.getSupportedPreviewSizes();
+        Camera.Size prevSize = parameters.getPreviewSize();*/
+
+        parameters.setPreviewFpsRange(30000,30000);
+        parameters.setPreviewSize(imageWidth,imageHeight);
+        cameraDevice.setParameters(parameters);
+        //////////////
         Log.i(LOG_TAG, "cameara open");
         cameraView = new CameraView(this, cameraDevice);
         topLayout.addView(cameraView);
@@ -142,8 +210,108 @@ public class RecordActivity extends Activity implements OnClickListener {
         btnRecorderControl.setOnClickListener(this);
         btnRecorderControl.bringToFront();
 
-        sensorPreview = (FrameLayout) findViewById(R.id.sensor_preview);
+        ImageView connectionIcon =(ImageView) findViewById(R.id.connectionStatus);
+        connectionIcon.bringToFront();
+
+        //Working with activity_camera.xml
+        //GridView sensorGrid = (GridView)findViewById(R.id.sensor_preview_grid);
+        //sensorGrid.bringToFront();
+        //uncomment it please
+        initSensorPreview();
+
+        //Working with activity_camera_v2.xml
+
+        /*sensorPreview = (FrameLayout) findViewById(R.id.sensor_preview);
         sensorPreview.bringToFront();
+        data1 = (EditText) findViewById(R.id.editText3);*/
+    }
+
+    private void initSensorPreview(){
+        //In this method we have to work in accordance to mapping in RecordSettings.activeSensorReadings
+        sensorPreview = (GridView)findViewById(R.id.sensor_preview_grid);
+        EEGSensorAdapter = new SensorPreviewAdapter(this,this.recordSettings.getActiveSensorReadings());
+        sensorPreview.setAdapter(EEGSensorAdapter);
+        sensorPreview.bringToFront();
+
+    }
+
+
+    public void updateLayout() {
+
+        TextView modifiedScore;
+        EEGPower newScores;
+        if(sensorConnector.getPower()!=null){
+            newScores = sensorConnector.getPower();
+            for(int i =0; i < visibleReadings.length;i++){
+                switch(visibleReadings[i]){
+                    case (-1):{
+                        break;
+                    }
+                    case(0): {
+                        modifiedScore = (TextView) findViewById(R.id.delta_score);
+                        modifiedScore.setText(Integer.toString(newScores.delta));
+                        break;
+                    }
+
+                    case(1): {
+                        modifiedScore = (TextView) findViewById(R.id.theta_score);
+                        modifiedScore.setText(Integer.toString(newScores.theta));
+                        break;
+                    }
+
+                    case(2): {
+                        modifiedScore = (TextView) findViewById(R.id.low_alpha_score);
+                        modifiedScore.setText(Integer.toString(newScores.lowAlpha));
+                        break;
+                    }
+
+                    case(3): {
+                        modifiedScore = (TextView) findViewById(R.id.high_alpha_score);
+                        modifiedScore.setText(Integer.toString(newScores.highAlpha));
+                        break;
+                    }
+
+                    case(4): {
+                        modifiedScore = (TextView) findViewById(R.id.low_beta_score);
+                        modifiedScore.setText(Integer.toString(newScores.lowBeta));
+                        break;
+                    }
+
+                    case(5): {
+                        modifiedScore = (TextView) findViewById(R.id.high_beta_score);
+                        modifiedScore.setText(Integer.toString(newScores.highBeta));
+                        break;
+                    }
+
+                    case(6): {
+                        modifiedScore = (TextView) findViewById(R.id.low_gamma_score);
+                        modifiedScore.setText(Integer.toString(newScores.lowGamma));
+                        break;
+                    }
+
+                    case(7): {
+                        modifiedScore = (TextView) findViewById(R.id.medium_gamma_score);
+                        modifiedScore.setText(Integer.toString(newScores.middleGamma));
+                        break;
+                    }
+
+                    case(8): {
+                        modifiedScore = (TextView) findViewById(R.id.attention_score);
+                        modifiedScore.setText(Integer.toString(sensorConnector.getCurrentAttention()));
+                        //modifiedScore.setText(Integer.toString(sensorConnector.));
+                        break;
+                    }
+
+                    case(9): {
+                        modifiedScore = (TextView) findViewById(R.id.meditation_score);
+                        modifiedScore.setText(Integer.toString(sensorConnector.getCurrentMeditation()));
+                        //modifiedScore.setText(Integer.toString(newScores.delta));
+                        break;
+                    }
+                }
+            }
+        }
+
     }
 
     //---------------------------------------
@@ -169,7 +337,6 @@ public class RecordActivity extends Activity implements OnClickListener {
         Log.i(LOG_TAG, "ffmpeg_url: " + ffmpeg_link);
         recorder = new FFmpegFrameRecorder(ffmpeg_link, imageWidth, imageHeight, 1);
         recorder.setFormat("mp4");
-        //recorder.setPixelFormat(avutil.AV_PIX_FMT_RGBA);
         recorder.setSampleRate(sampleAudioRateInHz);
         // Set in the surface changed method
         recorder.setFrameRate(frameRate);
@@ -181,8 +348,25 @@ public class RecordActivity extends Activity implements OnClickListener {
         runAudioThread = true;
     }
 
-    public void startRecording() {
+    private void initFileName(){
+        File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES), "FinalProject");
 
+        if(     recordSettings.getFileName()==null ||
+                recordSettings.getFileName().isEmpty() ||
+                recordSettings.getFileName().equals(R.string.insert_filename)) {
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+
+
+            ffmpeg_link = mediaStorageDir.getPath() + File.separator + "VID_" + timeStamp + ".mp4";
+        }
+        else{
+            ffmpeg_link = mediaStorageDir.getPath()+ File.separator +recordSettings.getFileName()+".mp4";
+        }
+    }
+
+    public void startRecording() {
+        initFileName();
         initRecorder();
 
         try {
@@ -456,6 +640,9 @@ public class RecordActivity extends Activity implements OnClickListener {
 
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
+            if(isSensorConnected) {
+                RecordActivity.this.updateLayout();
+            }
             if (audioRecord == null || audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
                 startTime = System.currentTimeMillis();
                 return;
@@ -465,7 +652,7 @@ public class RecordActivity extends Activity implements OnClickListener {
                 yuvType = new Type.Builder(rs, Element.U8(rs)).setX(data.length);
                 in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
 
-                rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(320).setY(240);
+                rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(imageWidth).setY(imageHeight);
                 out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
             }
 
@@ -474,26 +661,34 @@ public class RecordActivity extends Activity implements OnClickListener {
             yuvToRgbIntrinsic.setInput(in);
             yuvToRgbIntrinsic.forEach(out);
 
-            Bitmap bmpout = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888);
+            Bitmap bmpout = Bitmap.createBitmap(imageWidth, imageHeight, Bitmap.Config.ARGB_8888);
             out.copyTo(bmpout);
-            ByteBuffer pictureBuffer =ByteBuffer.allocate(307200);
+            ByteBuffer pictureBuffer =ByteBuffer.allocate(imageDimsMultiplied*4);
             bmpout.copyPixelsToBuffer(pictureBuffer);
 
 
 
             Bitmap returnedBitmap = Bitmap.createBitmap(sensorPreview.getWidth(), sensorPreview.getHeight(),Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(returnedBitmap);
-            canvas.drawColor(Color.WHITE);
+
+            Drawable bgDrawable =sensorPreview.getBackground();
+            if (bgDrawable!=null)
+                //has background drawable, then draw it on the canvas
+                bgDrawable.draw(canvas);
+            else
+                //does not have background drawable, then draw white background on the canvas
+                canvas.drawColor(Color.GRAY);
+
 
             sensorPreview.draw(canvas);
-            Bitmap sensorPreviewBitmap = Bitmap.createScaledBitmap(returnedBitmap,320,60,false);
+            Bitmap sensorPreviewBitmap = Bitmap.createScaledBitmap(returnedBitmap,imageWidth,image2Height,false);
 
             int size = sensorPreviewBitmap.getRowBytes() * sensorPreviewBitmap.getHeight();
             ByteBuffer sensorBuffer = ByteBuffer.allocate(size);
             sensorPreviewBitmap.copyPixelsToBuffer(sensorBuffer);
             sensorPreviewBitmap.recycle();
 
-            pictureBuffer.position(230396);
+            pictureBuffer.position((imageDimsMultiplied-image2DimsMultiplied)*4-4);
             sensorBuffer.rewind();
             pictureBuffer.put(sensorBuffer.array(),0,sensorBuffer.array().length);
             pictureBuffer.rewind();

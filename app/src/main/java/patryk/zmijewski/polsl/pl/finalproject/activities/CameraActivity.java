@@ -9,7 +9,6 @@ import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Environment;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -25,7 +24,7 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-import patryk.zmijewski.polsl.pl.finalproject.CameraPreview;
+import patryk.zmijewski.polsl.pl.finalproject.view.CameraPreview;
 import patryk.zmijewski.polsl.pl.finalproject.R;
 
 public class CameraActivity extends Activity{
@@ -46,7 +45,7 @@ public class CameraActivity extends Activity{
         super.onCreate(savedInstanceState);
         this.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        setContentView(R.layout.activity_camera);
+        setContentView(R.layout.activity_camera_v2);
 
         try {
             if (checkCameraHardware(this) == true) {

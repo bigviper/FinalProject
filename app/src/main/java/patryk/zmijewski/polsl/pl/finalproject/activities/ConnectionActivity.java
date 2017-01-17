@@ -19,21 +19,24 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.AdapterView.*;
 import android.widget.Button;
+import android.widget.GridLayout;
+import android.widget.GridView;
+import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.Toast;
 
 import java.lang.reflect.Method;
 import java.util.Set;
 
-import patryk.zmijewski.polsl.pl.finalproject.BTDeviceListAdapter;
+import patryk.zmijewski.polsl.pl.finalproject.model.sensor.SensorConnector;
+import patryk.zmijewski.polsl.pl.finalproject.view.BTDeviceListAdapter;
 import patryk.zmijewski.polsl.pl.finalproject.R;
-import patryk.zmijewski.polsl.pl.finalproject.RecordActivity;
-import patryk.zmijewski.polsl.pl.finalproject.Utils;
+import patryk.zmijewski.polsl.pl.finalproject.model.bluetooth.Utils;
 
 public class ConnectionActivity extends AppCompatActivity {
 
     private static final String TAG = ConnectionActivity.class.getSimpleName();
-    private TgStreamReader tgStreamReader;
+    private SensorConnector sensorConnector = SensorConnector.getInstance();
 
     private BluetoothAdapter mBluetoothAdapter;
     private BluetoothDevice mBluetoothDevice;
@@ -44,11 +47,12 @@ public class ConnectionActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         //requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.activity_connection);
+        sensorConnector.setContext(this);
+
 
         initView();
 
         try {
-            // TODO
             mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
             if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
                 Toast.makeText(
@@ -70,9 +74,8 @@ public class ConnectionActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         // TODO Auto-generated method stub
-        if(tgStreamReader != null){
-            tgStreamReader.close();
-            tgStreamReader = null;
+        if(sensorConnector.getTgStreamReader() != null){
+            sensorConnector.stop();
         }
         super.onDestroy();
     }
@@ -94,6 +97,18 @@ public class ConnectionActivity extends AppCompatActivity {
             public void onClick(View v) {
                 Intent intent = new Intent(ConnectionActivity.this,RecordActivity.class);
                 intent.putExtra("connectedBluetoothDevice",mBluetoothDevice);
+                intent.putExtra("connectedBluetoothDeviceAddress",address);
+                startActivity(intent);
+
+            }
+        });
+
+        ImageButton configurationButton = (ImageButton) findViewById(R.id.configuration_btn);
+
+        configurationButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(ConnectionActivity.this,SettingsActivity.class);
                 startActivity(intent);
 
             }
@@ -122,7 +137,6 @@ public class ConnectionActivity extends AppCompatActivity {
     }
 
     private void setUpDeviceListView(){
-
         LayoutInflater inflater = LayoutInflater.from(this);
         View view = inflater.inflate(R.layout.device_selection, null);
         list_select = (ListView) view.findViewById(R.id.list_select);
@@ -161,7 +175,6 @@ public class ConnectionActivity extends AppCompatActivity {
 
         @Override
         public void onItemClick(AdapterView<?> arg0, View arg1,int arg2, long arg3) {
-            // TODO Auto-generated method stub
             Log.d(TAG, "Rico ####  list_select onItemClick     ");
             if(mBluetoothAdapter.isDiscovering()){
                 mBluetoothAdapter.cancelDiscovery();
@@ -185,6 +198,24 @@ public class ConnectionActivity extends AppCompatActivity {
                 Button navigationButton = (Button) findViewById(R.id.btn_navigate);
                 navigationButton.setVisibility(View.VISIBLE);
             }
+            BluetoothAdapter btAdapter;
+
+            try {
+                btAdapter = BluetoothAdapter.getDefaultAdapter();
+
+            } catch (Exception e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+                return;
+            }
+            sensorConnector.setmBluetoothAdapter(btAdapter);
+            sensorConnector.setmBluetoothDevice(mBluetoothDevice);
+            sensorConnector.setAddress(address);
+
+            /*if(!sensorConnector.isConnected()) {
+                sensorConnector.start();
+            }*/
+
 
             //bind and connect
             //bindToDevice(remoteDevice); // create bond works unstable on Samsung S5
