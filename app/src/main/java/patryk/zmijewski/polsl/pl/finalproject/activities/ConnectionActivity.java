@@ -99,6 +99,8 @@ public class ConnectionActivity extends AppCompatActivity {
                 intent.putExtra("connectedBluetoothDevice",mBluetoothDevice);
                 intent.putExtra("connectedBluetoothDeviceAddress",address);
                 startActivity(intent);
+                /*Intent intent = new Intent(ConnectionActivity.this,CameraActivity.class);
+                startActivity(intent);*/
 
             }
         });

@@ -17,6 +17,8 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.RenderScript;
@@ -76,7 +78,7 @@ public class RecordActivity extends Activity implements OnClickListener {
     private int sampleAudioRateInHz = 44100;
     private int imageWidth = 1280;
     private int imageHeight = 720;
-    private final int image2Height = 103;
+    private final int image2Height = 145;
     private final int imageDimsMultiplied = imageWidth*imageHeight;
     private final int image2DimsMultiplied = imageWidth*image2Height;
     private int frameRate = 30;
@@ -186,9 +188,20 @@ public class RecordActivity extends Activity implements OnClickListener {
     }
 
 
+
     private void initLayout() {
         RelativeLayout topLayout = (RelativeLayout) findViewById(R.id.camera_preview);
-        cameraDevice = Camera.open();
+
+        if (mThread == null) {
+            mThread = new CameraHandlerThread();
+        }
+
+        synchronized (mThread) {
+            mThread.openCamera();
+        }
+
+
+        //cameraDevice = Camera.open();
         /////////////Comment
         Camera.Parameters parameters = cameraDevice.getParameters();
 
@@ -467,6 +480,10 @@ public class RecordActivity extends Activity implements OnClickListener {
     }
 
 
+
+    private CameraHandlerThread mThread = null;
+
+
     //---------------------------------------------
     // audio thread, gets and encodes audio data
     //---------------------------------------------
@@ -548,14 +565,20 @@ public class RecordActivity extends Activity implements OnClickListener {
         private Type.Builder yuvType, rgbaType;
         private Allocation in, out;
 
+        private CallbackHandlerThread[] callbackThreads = null;
+        private int openThreads;
+
+
         public CameraView(Context context, Camera camera) {
             super(context);
-            Log.w("camera","camera view");
+            Log.w("camera", "camera view");
             mCamera = camera;
             mHolder = getHolder();
             mHolder.addCallback(CameraView.this);
             mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
             mCamera.setPreviewCallback(CameraView.this);
+            openThreads = 0;
+            callbackThreads = new CallbackHandlerThread[1];
         }
 
         @Override
@@ -597,10 +620,10 @@ public class RecordActivity extends Activity implements OnClickListener {
             }
             camParams.setPreviewSize(imageWidth, imageHeight);
 
-            Log.v(LOG_TAG,"Setting imageWidth: " + imageWidth + " imageHeight: " + imageHeight + " frameRate: " + frameRate);
+            Log.v(LOG_TAG, "Setting imageWidth: " + imageWidth + " imageHeight: " + imageHeight + " frameRate: " + frameRate);
 
             camParams.setPreviewFrameRate(frameRate);
-            Log.v(LOG_TAG,"Preview Framerate: " + camParams.getPreviewFrameRate());
+            Log.v(LOG_TAG, "Preview Framerate: " + camParams.getPreviewFrameRate());
 
             mCamera.setParameters(camParams);
 
@@ -640,85 +663,134 @@ public class RecordActivity extends Activity implements OnClickListener {
 
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
-            if(isSensorConnected) {
-                RecordActivity.this.updateLayout();
-            }
-            if (audioRecord == null || audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
-                startTime = System.currentTimeMillis();
-                return;
-            }
-            if (yuvType == null)
-            {
-                yuvType = new Type.Builder(rs, Element.U8(rs)).setX(data.length);
-                in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
-
-                rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(imageWidth).setY(imageHeight);
-                out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
+            if (callbackThreads[openThreads] == null) {
+                callbackThreads[openThreads] = new CallbackHandlerThread(data);
             }
 
-            in.copyFrom(data);
+            synchronized (callbackThreads[openThreads]) {
 
-            yuvToRgbIntrinsic.setInput(in);
-            yuvToRgbIntrinsic.forEach(out);
-
-            Bitmap bmpout = Bitmap.createBitmap(imageWidth, imageHeight, Bitmap.Config.ARGB_8888);
-            out.copyTo(bmpout);
-            ByteBuffer pictureBuffer =ByteBuffer.allocate(imageDimsMultiplied*4);
-            bmpout.copyPixelsToBuffer(pictureBuffer);
-
-
-
-            Bitmap returnedBitmap = Bitmap.createBitmap(sensorPreview.getWidth(), sensorPreview.getHeight(),Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(returnedBitmap);
-
-            Drawable bgDrawable =sensorPreview.getBackground();
-            if (bgDrawable!=null)
-                //has background drawable, then draw it on the canvas
-                bgDrawable.draw(canvas);
-            else
-                //does not have background drawable, then draw white background on the canvas
-                canvas.drawColor(Color.GRAY);
-
-
-            sensorPreview.draw(canvas);
-            Bitmap sensorPreviewBitmap = Bitmap.createScaledBitmap(returnedBitmap,imageWidth,image2Height,false);
-
-            int size = sensorPreviewBitmap.getRowBytes() * sensorPreviewBitmap.getHeight();
-            ByteBuffer sensorBuffer = ByteBuffer.allocate(size);
-            sensorPreviewBitmap.copyPixelsToBuffer(sensorBuffer);
-            sensorPreviewBitmap.recycle();
-
-            pictureBuffer.position((imageDimsMultiplied-image2DimsMultiplied)*4-4);
-            sensorBuffer.rewind();
-            pictureBuffer.put(sensorBuffer.array(),0,sensorBuffer.array().length);
-            pictureBuffer.rewind();
-
-
-            if (RECORD_LENGTH > 0) {
-                int i = imagesIndex++ % images.length;
-                yuvImage = images[i];
-                timestamps[i] = 1000 * (System.currentTimeMillis() - startTime);
+                callbackThreads[openThreads].processFrame();
             }
+
+
+        }
+
+        private class CallbackHandlerThread extends HandlerThread {
+            Handler mHandler = null;
+            byte[] data = null;
+
+            CallbackHandlerThread(byte[] inputData) {
+                super("CallbackHandlerThread");
+                start();
+                data = inputData;
+                mHandler = new Handler(getLooper());
+            }
+
+            synchronized void notifyFrameProcessed() {
+                notify();
+            }
+
+            void processFrame() {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        processFrameAction(data);
+                        notifyFrameProcessed();
+                    }
+                });
+                try {
+                    wait();
+                }
+                catch (InterruptedException e) {
+                    Log.w(LOG_TAG, "wait was interrupted");
+                }
+            }
+
+            private void processFrameAction(byte[] data) {
+                if(isSensorConnected) {
+                    RecordActivity.this.updateLayout();
+                }
+                if (audioRecord == null || audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+                    startTime = System.currentTimeMillis();
+                    return;
+                }
+                if (yuvType == null)
+                {
+                    yuvType = new Type.Builder(rs, Element.U8(rs)).setX(data.length);
+                    in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
+
+                    rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(imageWidth).setY(imageHeight);
+                    out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
+                }
+
+                in.copyFrom(data);
+
+                yuvToRgbIntrinsic.setInput(in);
+                yuvToRgbIntrinsic.forEach(out);
+
+                Bitmap bmpout = Bitmap.createBitmap(imageWidth, imageHeight, Bitmap.Config.ARGB_8888);
+                out.copyTo(bmpout);
+                ByteBuffer pictureBuffer =ByteBuffer.allocate(imageDimsMultiplied*4);
+                bmpout.copyPixelsToBuffer(pictureBuffer);
+
+
+
+                Bitmap returnedBitmap = Bitmap.createBitmap(sensorPreview.getWidth(), sensorPreview.getHeight(),Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(returnedBitmap);
+
+                Drawable bgDrawable =sensorPreview.getBackground();
+                if (bgDrawable!=null)
+                    //has background drawable, then draw it on the canvas
+                    bgDrawable.draw(canvas);
+                else
+                    //does not have background drawable, then draw white background on the canvas
+                    canvas.drawColor(Color.GRAY);
+
+
+                sensorPreview.draw(canvas);
+                Bitmap sensorPreviewBitmap = Bitmap.createScaledBitmap(returnedBitmap,imageWidth,image2Height,false);
+
+                int size = sensorPreviewBitmap.getRowBytes() * sensorPreviewBitmap.getHeight();
+                ByteBuffer sensorBuffer = ByteBuffer.allocate(size);
+                sensorPreviewBitmap.copyPixelsToBuffer(sensorBuffer);
+                sensorPreviewBitmap.recycle();
+
+                pictureBuffer.position((imageDimsMultiplied-image2DimsMultiplied)*4-4);
+                sensorBuffer.rewind();
+                pictureBuffer.put(sensorBuffer.array(),0,sensorBuffer.array().length);
+                pictureBuffer.rewind();
+
+
+                if (RECORD_LENGTH > 0) {
+                    int i = imagesIndex++ % images.length;
+                    yuvImage = images[i];
+                    timestamps[i] = 1000 * (System.currentTimeMillis() - startTime);
+                }
 
 
             /* get video data */
-            if (yuvImage != null && recording) {
-                ((ByteBuffer)yuvImage.image[0].position(0)).put(pictureBuffer);
+                if (yuvImage != null && recording) {
+                    ((ByteBuffer)yuvImage.image[0].position(0)).put(pictureBuffer);
 
-                if (RECORD_LENGTH <= 0) try {
-                    Log.v(LOG_TAG,"Writing Frame");
-                    long t = 1000 * (System.currentTimeMillis() - startTime);
-                    if (t > recorder.getTimestamp()) {
-                        recorder.setTimestamp(t);
+                    if (RECORD_LENGTH <= 0) try {
+                        Log.v(LOG_TAG,"Writing Frame");
+                        long t = 1000 * (System.currentTimeMillis() - startTime);
+                        if (t > recorder.getTimestamp()) {
+                            recorder.setTimestamp(t);
+                        }
+                        recorder.record(yuvImage, avutil.AV_PIX_FMT_RGBA);
+                    } catch (FFmpegFrameRecorder.Exception e) {
+                        Log.v(LOG_TAG,e.getMessage());
+                        e.printStackTrace();
                     }
-                    recorder.record(yuvImage, avutil.AV_PIX_FMT_RGBA);
-                } catch (FFmpegFrameRecorder.Exception e) {
-                    Log.v(LOG_TAG,e.getMessage());
-                    e.printStackTrace();
                 }
             }
         }
     }
+
+
+
+
 
     @Override
     public void onClick(View v) {
@@ -733,4 +805,46 @@ public class RecordActivity extends Activity implements OnClickListener {
             btnRecorderControl.setText("Start");
         }
     }
+
+
+
+    private class CameraHandlerThread extends HandlerThread {
+        Handler mHandler = null;
+
+        CameraHandlerThread() {
+            super("CameraHandlerThread");
+            start();
+            mHandler = new Handler(getLooper());
+        }
+
+        synchronized void notifyCameraOpened() {
+            notify();
+        }
+
+        void openCamera() {
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    oldOpenCamera();
+                    notifyCameraOpened();
+                }
+            });
+            try {
+                wait();
+            }
+            catch (InterruptedException e) {
+                Log.w(LOG_TAG, "wait was interrupted");
+            }
+        }
+
+        private void oldOpenCamera() {
+            try {
+                cameraDevice = Camera.open();
+            }
+            catch (RuntimeException e) {
+                Log.e(LOG_TAG, "failed to open front camera");
+            }
+        }
+    }
+
 }

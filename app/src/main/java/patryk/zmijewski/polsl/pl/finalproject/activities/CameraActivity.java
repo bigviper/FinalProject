@@ -11,6 +11,8 @@ import android.net.Uri;
 import android.os.Environment;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.Window;
 import android.widget.Button;
@@ -21,8 +23,12 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 
 import patryk.zmijewski.polsl.pl.finalproject.view.CameraPreview;
 import patryk.zmijewski.polsl.pl.finalproject.R;
@@ -32,13 +38,14 @@ public class CameraActivity extends Activity{
     private static final String TAG = "0x000000";
     private Camera mCamera;
     private MediaRecorder mMediaRecorder;
-    private CameraPreview mPreview;
-    //private FFmpegFrameRecorder rr;
+    private MyCameraPreview mPreview;
 
     private boolean isRecording = false;
 
     public static final int MEDIA_TYPE_IMAGE = 1;
     public static final int MEDIA_TYPE_VIDEO = 2;
+
+    File sensorReadings = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,7 +65,13 @@ public class CameraActivity extends Activity{
 
         //mCamera.setPreviewCallback(previewCallback);
         // Create our Preview view and set it as the content of our activity.
-        mPreview = new CameraPreview(this, mCamera);
+        //mCamera.unlock();
+        mPreview = new MyCameraPreview(this, mCamera);
+        /*try {
+            mCamera.reconnect();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }*/
         RelativeLayout preview = (RelativeLayout) findViewById(R.id.camera_preview);
         preview.addView(mPreview);
 
@@ -197,10 +210,6 @@ public class CameraActivity extends Activity{
     };
 
 
-
-
-
-
     private boolean prepareVideoRecorder() {
 
         //mCamera = getCameraInstance();
@@ -220,7 +229,9 @@ public class CameraActivity extends Activity{
         mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH));
 
         // Step 4: Set output file
-        mMediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+        String fileName = getOutputMediaFile(MEDIA_TYPE_VIDEO).toString();
+        mMediaRecorder.setOutputFile(fileName);
+        sensorReadings = new File(fileName+".txt");
 
         // Step 5: Set the preview output
         mMediaRecorder.setPreviewDisplay(mPreview.getHolder().getSurface());
@@ -269,6 +280,127 @@ public class CameraActivity extends Activity{
         if (mCamera != null){
             mCamera.release();        // release the camera for other applications
             mCamera = null;
+        }
+    }
+
+
+    private class MyCameraPreview extends SurfaceView implements SurfaceHolder.Callback, PreviewCallback{
+        private static final String LOG_TAG = "PreviewTAG";
+        PrintWriter out;
+
+        private SurfaceHolder mHolder;
+        private Camera mCamera;
+
+        private int imageWidth;
+        private int imageHeight;
+        private boolean isPreviewOn = false;
+
+        public MyCameraPreview(Context context, Camera camera) {
+            super(context);
+            mCamera = camera;
+            mHolder = getHolder();
+            mHolder.addCallback(MyCameraPreview.this);
+            mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+            camera.setPreviewCallback(MyCameraPreview.this);
+        }
+
+        @Override
+        public void onPreviewFrame(byte[] data, Camera camera) {
+
+            if(sensorReadings!=null){
+                if(out==null){
+                    try {
+                        out = new PrintWriter(sensorReadings);
+                    } catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    }
+                }
+                out.println("shiet");
+
+            }
+        }
+
+        @Override
+        public void surfaceCreated(SurfaceHolder holder) {
+            try {
+                stopPreview();
+                mCamera.setPreviewDisplay(holder);
+            } catch (IOException exception) {
+                mCamera.release();
+                mCamera = null;
+            }
+        }
+
+
+
+        @Override
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            stopPreview();
+
+            Camera.Parameters camParams = mCamera.getParameters();
+            List<Size> sizes = camParams.getSupportedPreviewSizes();
+
+            Collections.sort(sizes, new Comparator<Size>() {
+
+                public int compare(final Camera.Size a, final Camera.Size b) {
+                    return a.width * a.height - b.width * b.height;
+                }
+            });
+
+            // Pick the first preview size that is equal or bigger, or pick the last (biggest) option if we cannot
+            // reach the initial settings of imageWidth/imageHeight.
+            for (int i = 0; i < sizes.size(); i++) {
+                if ((sizes.get(i).width >= imageWidth && sizes.get(i).height >= imageHeight) || i == sizes.size() - 1) {
+                    imageWidth = sizes.get(i).width;
+                    imageHeight = sizes.get(i).height;
+                    break;
+                }
+            }
+
+            camParams.setPreviewSize(imageWidth, imageHeight);
+
+
+            camParams.setPreviewFrameRate(30);
+
+
+            mCamera.setParameters(camParams);
+
+            // Set the holder (which might have changed) again
+            try {
+                mCamera.setPreviewDisplay(holder);
+                mCamera.setPreviewCallback(MyCameraPreview.this);
+                startPreview();
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Could not set preview display in surfaceChanged");
+            }
+        }
+
+        @Override
+        public void surfaceDestroyed(SurfaceHolder holder) {
+            try {
+                mHolder.addCallback(null);
+                mCamera.setPreviewCallback(null);
+            } catch (RuntimeException e) {
+                // The camera has probably just been released, ignore.
+            }
+        }
+
+        public Camera getmCamera() {
+            return mCamera;
+        }
+
+        public void startPreview() {
+            if (!isPreviewOn && mCamera != null) {
+                isPreviewOn = true;
+                mCamera.startPreview();
+            }
+        }
+
+        public void stopPreview() {
+            if (isPreviewOn && mCamera != null) {
+                isPreviewOn = false;
+                mCamera.stopPreview();
+            }
         }
     }
 }
