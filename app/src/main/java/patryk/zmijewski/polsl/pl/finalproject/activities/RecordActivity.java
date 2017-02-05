@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.YuvImage;
 import android.graphics.drawable.Drawable;
 import android.hardware.Camera;
 import android.hardware.Camera.PreviewCallback;
@@ -45,6 +46,7 @@ import com.neurosky.connection.EEGPower;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
@@ -52,10 +54,15 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 
+import org.bytedeco.javacpp.Pointer;
 import org.bytedeco.javacpp.avutil;
+import org.bytedeco.javacpp.opencv_core;
 import org.bytedeco.javacv.Frame;
+import org.bytedeco.javacv.OpenCVFrameConverter;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
+import org.bytedeco.javacpp.opencv_imgproc;
 
+import jp.co.cyberagent.android.gpuimage.GPUImageNativeLibrary;
 import patryk.zmijewski.polsl.pl.finalproject.R;
 import patryk.zmijewski.polsl.pl.finalproject.model.sensor.SensorConnector;
 import patryk.zmijewski.polsl.pl.finalproject.model.settings.RecordSettings;
@@ -192,16 +199,16 @@ public class RecordActivity extends Activity implements OnClickListener {
     private void initLayout() {
         RelativeLayout topLayout = (RelativeLayout) findViewById(R.id.camera_preview);
 
-        if (mThread == null) {
+       /* if (mThread == null) {
             mThread = new CameraHandlerThread();
         }
 
         synchronized (mThread) {
             mThread.openCamera();
-        }
+        }*/
 
 
-        //cameraDevice = Camera.open();
+        cameraDevice = Camera.open();
         /////////////Comment
         Camera.Parameters parameters = cameraDevice.getParameters();
 
@@ -211,6 +218,8 @@ public class RecordActivity extends Activity implements OnClickListener {
 
         parameters.setPreviewFpsRange(30000,30000);
         parameters.setPreviewSize(imageWidth,imageHeight);
+        List<Integer> formats = parameters.getSupportedPreviewFormats();
+        parameters.setPreviewFormat(formats.get(0));
         cameraDevice.setParameters(parameters);
         //////////////
         Log.i(LOG_TAG, "cameara open");
@@ -527,8 +536,7 @@ public class RecordActivity extends Activity implements OnClickListener {
                 audioData.limit(bufferReadResult);
                 if (bufferReadResult > 0) {
                     Log.v(LOG_TAG,"bufferReadResult: " + bufferReadResult);
-                    // If "recording" isn't true when start this thread, it never get's set according to this if statement...!!!
-                    // Why?  Good question...
+
                     if (recording) {
                         if (RECORD_LENGTH <= 0) try {
                             recorder.recordSamples(audioData);
@@ -542,7 +550,6 @@ public class RecordActivity extends Activity implements OnClickListener {
             }
             Log.v(LOG_TAG,"AudioThread Finished, release audioRecord");
 
-            /* encoding finish, release recorder */
             if (audioRecord != null) {
                 audioRecord.stop();
                 audioRecord.release();
@@ -565,8 +572,10 @@ public class RecordActivity extends Activity implements OnClickListener {
         private Type.Builder yuvType, rgbaType;
         private Allocation in, out;
 
-        private CallbackHandlerThread[] callbackThreads = null;
+        private CallbackHandlerThread callbackThreads = null;
         private int openThreads;
+
+        private int[] callbackBitmapBuffer;
 
 
         public CameraView(Context context, Camera camera) {
@@ -578,7 +587,8 @@ public class RecordActivity extends Activity implements OnClickListener {
             mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
             mCamera.setPreviewCallback(CameraView.this);
             openThreads = 0;
-            callbackThreads = new CallbackHandlerThread[1];
+            //callbackThreads = new CallbackHandlerThread[2];
+            callbackBitmapBuffer = new int[imageHeight*imageWidth];
         }
 
         @Override
@@ -663,15 +673,88 @@ public class RecordActivity extends Activity implements OnClickListener {
 
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
-            if (callbackThreads[openThreads] == null) {
-                callbackThreads[openThreads] = new CallbackHandlerThread(data);
+            /*if (callbackThreads == null) {
+                callbackThreads = new CallbackHandlerThread(data);
             }
 
-            synchronized (callbackThreads[openThreads]) {
+            synchronized (callbackThreads) {
 
-                callbackThreads[openThreads].processFrame();
+                callbackThreads.processFrame();
+            }*/
+            opencv_core.Mat res =new opencv_core.Mat();
+
+            /*Frame previewPicture = new Frame(imageWidth, imageHeight+imageHeight/2, Frame.DEPTH_UBYTE, 1);
+            ((ByteBuffer)previewPicture.image[0].position(0)).put(data);
+
+            OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
+            opencv_core.Mat previewPictureYuv = converter.convert(previewPicture);*/
+
+            opencv_core.Mat mYuv = new opencv_core.Mat(imageHeight+imageHeight/2, imageWidth, opencv_core.CV_8UC1);
+             mYuv.data().put(data);
+            //mYuv.put(new opencv_core.Mat(0,0,data));
+
+            opencv_imgproc.cvtColor(mYuv,res,opencv_imgproc.COLOR_YUV420sp2RGBA);
+            //COLOR_YUV2RGB_I420
+
+
+            //GPUImageNativeLibrary.YUVtoARBG(data,imageWidth,imageHeight,callbackBitmapBuffer);
+
+
+            ByteBuffer pictureByteBuffer = res.data().asByteBuffer();
+            /*ByteBuffer pictureByteBuffer = ByteBuffer.allocate(imageWidth*imageHeight*4);
+            IntBuffer pictureIntBuffer = pictureByteBuffer.asIntBuffer();
+            pictureIntBuffer.put(callbackBitmapBuffer);*/
+
+
+            Bitmap returnedBitmap = Bitmap.createBitmap(sensorPreview.getWidth(), sensorPreview.getHeight(),Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(returnedBitmap);
+
+            Drawable bgDrawable =sensorPreview.getBackground();
+            if (bgDrawable!=null)
+                //has background drawable, then draw it on the canvas
+                bgDrawable.draw(canvas);
+            else
+                //does not have background drawable, then draw white background on the canvas
+                canvas.drawColor(Color.GRAY);
+            sensorPreview.draw(canvas);
+
+
+
+            Bitmap sensorPreviewBitmap = Bitmap.createScaledBitmap(returnedBitmap,imageWidth,image2Height,false);
+
+            int size = sensorPreviewBitmap.getRowBytes() * sensorPreviewBitmap.getHeight();
+            ByteBuffer sensorBuffer = ByteBuffer.allocate(size);
+            sensorPreviewBitmap.copyPixelsToBuffer(sensorBuffer);
+            sensorPreviewBitmap.recycle();
+
+            pictureByteBuffer.position((imageDimsMultiplied-image2DimsMultiplied)*4);
+            sensorBuffer.rewind();
+            pictureByteBuffer.put(sensorBuffer.array(),0,sensorBuffer.array().length);
+            pictureByteBuffer.rewind();
+
+            if (RECORD_LENGTH > 0) {
+                int i = imagesIndex++ % images.length;
+                yuvImage = images[i];
+                timestamps[i] = 1000 * (System.currentTimeMillis() - startTime);
             }
 
+
+            /* get video data */
+            if (yuvImage != null && recording) {
+                ((ByteBuffer)yuvImage.image[0].position(0)).put(pictureByteBuffer);
+
+                if (RECORD_LENGTH <= 0) try {
+                    Log.v(LOG_TAG,"Writing Frame");
+                    long t = 1000 * (System.currentTimeMillis() - startTime);
+                    if (t > recorder.getTimestamp()) {
+                        recorder.setTimestamp(t);
+                    }
+                    recorder.record(yuvImage, avutil.AV_PIX_FMT_RGBA);
+                } catch (FFmpegFrameRecorder.Exception e) {
+                    Log.v(LOG_TAG,e.getMessage());
+                    e.printStackTrace();
+                }
+            }
 
         }
 
@@ -695,15 +778,10 @@ public class RecordActivity extends Activity implements OnClickListener {
                     @Override
                     public void run() {
                         processFrameAction(data);
-                        notifyFrameProcessed();
+
                     }
                 });
-                try {
-                    wait();
-                }
-                catch (InterruptedException e) {
-                    Log.w(LOG_TAG, "wait was interrupted");
-                }
+
             }
 
             private void processFrameAction(byte[] data) {

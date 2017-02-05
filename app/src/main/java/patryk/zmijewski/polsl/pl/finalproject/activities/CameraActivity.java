@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.hardware.Camera;
 import android.hardware.Camera.*;
 import android.media.CamcorderProfile;
+import android.media.MediaCodec;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Environment;
@@ -223,10 +224,13 @@ public class CameraActivity extends Activity{
 
         // Step 2: Set sources
         mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
-        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        /*mMediaRecorder.setInputSurface(mPreview.getHolder().getSurface());
+        MediaCodec codec;
+        codec.createPersistentInputSurface();*/
 
         // Step 3: Set a CamcorderProfile (requires API Level 8 or higher)
-        mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH));
+       // mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH));
 
         // Step 4: Set output file
         String fileName = getOutputMediaFile(MEDIA_TYPE_VIDEO).toString();
@@ -234,7 +238,7 @@ public class CameraActivity extends Activity{
         sensorReadings = new File(fileName+".txt");
 
         // Step 5: Set the preview output
-        mMediaRecorder.setPreviewDisplay(mPreview.getHolder().getSurface());
+        //mMediaRecorder.setPreviewDisplay();
 
         // Step 6: Prepare configured MediaRecorder
         try {
@@ -249,13 +253,13 @@ public class CameraActivity extends Activity{
             return false;
         }
 
-        mPreview.getmCamera().setPreviewCallback(new PreviewCallback() {
+        /*mPreview.getmCamera().setPreviewCallback(new PreviewCallback() {
             public void onPreviewFrame(byte[] data, Camera camera) {
                 for(int i=0;i<data.length;i++){
                     data[i] = (byte) 0;
                 }
             }
-        });
+        });*/
         return true;
     }
 
@@ -307,7 +311,7 @@ public class CameraActivity extends Activity{
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
 
-            if(sensorReadings!=null){
+            /*if(sensorReadings!=null){
                 if(out==null){
                     try {
                         out = new PrintWriter(sensorReadings);
@@ -317,7 +321,7 @@ public class CameraActivity extends Activity{
                 }
                 out.println("shiet");
 
-            }
+            }*/
         }
 
         @Override
